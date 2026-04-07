@@ -1,0 +1,11 @@
+_*.png
+_*.txt
+_*.json
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+__pycache__/
+*.pyc

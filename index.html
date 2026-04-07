@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2c3e50">
+<title>Quick & Dirty Floor Planner</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #ecf0f1; color: #2c3e50;
+    user-select: none; -webkit-user-select: none; touch-action: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header {
+    background: #2c3e50; color: white; padding: 8px 12px;
+    display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
+  .toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; cursor: pointer;
+  }
+  .toggle input { width: 16px; height: 16px; }
+  #canvas-wrap {
+    flex: 1; position: relative; overflow: hidden; background: #fff;
+    touch-action: none;
+  }
+  svg#plan { width: 100%; height: 100%; display: block; }
+  footer {
+    background: #34495e; color: white;
+    padding: 8px; flex-shrink: 0;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    min-height: 56px;
+  }
+  button {
+    background: #3498db; color: white; border: none; border-radius: 6px;
+    padding: 10px 14px; font-size: 14px; font-weight: 600;
+    cursor: pointer; touch-action: manipulation;
+  }
+  button:active { background: #2980b9; }
+  button.danger { background: #e74c3c; }
+  button.danger:active { background: #c0392b; }
+  button.ok { background: #27ae60; }
+  button.secondary { background: #7f8c8d; }
+  button:disabled { opacity: 0.4; }
+  .sel-info { color: white; font-size: 13px; flex: 1; min-width: 100px; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: none; align-items: flex-end; justify-content: center;
+    z-index: 100;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: white; width: 100%; max-width: 500px;
+    border-radius: 16px 16px 0 0; padding: 16px;
+    max-height: 80vh; overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 12px; font-size: 16px; }
+  .palette {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr));
+    gap: 8px;
+  }
+  .palette button {
+    background: #ecf0f1; color: #2c3e50; text-align: left;
+    padding: 10px; font-size: 13px; line-height: 1.3;
+  }
+  .palette button strong { display: block; font-size: 14px; }
+  .palette button small { color: #7f8c8d; }
+  .custom-row {
+    display: flex; gap: 6px; margin-top: 12px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .custom-row input {
+    width: 70px; padding: 8px; font-size: 14px;
+    border: 1px solid #bdc3c7; border-radius: 4px;
+  }
+  .custom-row label { font-size: 13px; }
+  .modal-close {
+    width: 100%; margin-top: 12px; background: #95a5a6;
+  }
+
+  .furn rect { fill: #d4a574; stroke: #8b6f47; stroke-width: 1; }
+  .furn.selected rect { stroke: #e74c3c; stroke-width: 2; }
+  .furn text {
+    fill: #4a3520; font-size: 8px; text-anchor: middle;
+    dominant-baseline: middle; pointer-events: none;
+    font-family: sans-serif;
+  }
+  .removable { opacity: 1; transition: opacity 0.2s; }
+  .removable.hidden { opacity: 0.15; }
+  .removable.hidden rect, .removable.hidden polygon { fill: #ddd; }
+
+  .hint {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: rgba(44,62,80,0.9); color: white;
+    padding: 6px 12px; border-radius: 4px; font-size: 12px;
+    pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  }
+  .hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🏠 <span id="varName">Variant</span></h1>
+    <label class="toggle">
+      <input type="checkbox" id="wallToggle">
+      <span id="toggleLabel">Open storage</span>
+    </label>
+  </header>
+
+  <div id="canvas-wrap">
+    <svg id="plan" viewBox="0 0 3000 1200" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse" x="138" y="230">
+          <path d="M50 0H0V50" fill="none" stroke="#e6e6e6" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect width="3000" height="1200" fill="#ffffff"/>
+      <rect x="88" y="230" width="2550" height="850" fill="url(#grid)" stroke="#cfcfcf" stroke-width="1"/>
+
+      <!-- Demo floor plan walls -->
+      <g id="walls" fill="#9a9a9a" stroke="none">
+        <rect x="688"  y="326" width="528" height="33"/>
+        <rect x="1216" y="326" width="592" height="26"/>
+        <rect x="1808" y="326" width="279" height="33"/>
+        <rect x="688"  y="326" width="33"  height="672"/>
+        <rect x="2073" y="326" width="14"  height="535"/>
+        <rect x="688"  y="965" width="1124" height="33"/>
+        <rect x="1779" y="828" width="308" height="33"/>
+        <rect x="1779" y="861" width="33"  height="137"/>
+
+        <rect x="872"  y="359" width="18"  height="90"/>
+        <rect x="721"  y="450" width="151" height="9"/>
+        <rect x="1206" y="359" width="9"   height="167"/>
+        <rect x="1482" y="352" width="9"   height="168"/>
+        <rect x="1213" y="510" width="278" height="9"/>
+        <rect x="1807" y="352" width="9"   height="199"/>
+        <rect x="1213" y="649" width="9"   height="316"/>
+        <rect x="1135" y="665" width="78"  height="9"/>
+        <rect x="721"  y="665" width="492" height="9"/>
+        <rect x="1473" y="520" width="9"   height="445"/>
+        <rect x="1222" y="649" width="251" height="9"/>
+        <rect x="1189" y="865" width="33"  height="100"/>
+        <rect x="1779" y="915" width="45"  height="40"/>
+
+        <g id="removable-walls" class="removable">
+          <rect x="890" y="450" width="125" height="9"/>
+          <polygon points="1088,526 1088,533 1078,523 1082,518"/>
+          <rect x="1078" y="524" width="137" height="9"/>
+          <rect x="1078" y="471" width="9"   height="62"/>
+        </g>
+      </g>
+
+      <g id="openings" fill="#ffffff" stroke="#bdbdbd" stroke-width="1.5">
+        <rect x="1386" y="326" width="78"  height="26"/>
+        <rect x="1602" y="326" width="120" height="26"/>
+        <rect x="2005" y="326" width="51"  height="33"/>
+        <rect x="688"  y="389" width="33"  height="40"/>
+        <rect x="688"  y="500" width="33"  height="88"/>
+        <rect x="688"  y="722" width="33"  height="197"/>
+        <rect x="2073" y="362" width="14"  height="68"/>
+        <rect x="2073" y="446" width="14"  height="222"/>
+        <rect x="2073" y="676" width="14"  height="68"/>
+        <rect x="2073" y="760" width="14"  height="66"/>
+        <rect x="898"  y="965" width="100" height="33"/>
+        <rect x="1288" y="965" width="100" height="33"/>
+        <rect x="1588" y="965" width="120" height="33"/>
+        <rect x="2008" y="828" width="50"  height="33"/>
+        <rect x="1056" y="665" width="76"  height="9"/>
+        <rect x="745"  y="450" width="62"  height="9"/>
+        <rect x="1319" y="510" width="59"  height="9"/>
+        <rect x="1473" y="526" width="9"   height="70"/>
+        <rect x="1349" y="649" width="70"  height="9"/>
+      </g>
+
+      <g fill="#ffffff" stroke="#9a9a9a" stroke-width="3">
+        <circle cx="1133.5" cy="977.5" r="12.5"/>
+        <circle cx="1800.5" cy="935.5" r="12.5"/>
+      </g>
+
+      <g id="roomLabels" fill="#888" font-size="36" font-family="sans-serif" pointer-events="none">
+        <text id="lbl-wc"      x="785"  y="410">WC</text>
+        <text id="lbl-storage" x="940"  y="500">Storage</text>
+        <text id="lbl-bath"    x="1290" y="460">Bath</text>
+        <text id="lbl-kitchen" x="1573" y="460">Kitchen</text>
+        <text id="lbl-dining"  x="1875" y="460">Dining</text>
+        <text id="lbl-hall"    x="850"  y="600">Hallway</text>
+        <text id="lbl-bedroom1" x="820" y="820">Bedroom</text>
+        <text id="lbl-bedroom2" x="1255" y="820">Bedroom</text>
+        <text id="lbl-living"  x="1575" y="820">Living</text>
+      </g>
+
+      <g id="furniture"></g>
+    </svg>
+    <div class="hint" id="hint"></div>
+  </div>
+
+  <footer>
+    <button id="addBtn">＋ <span id="lbl-add">Furniture</span></button>
+    <span class="sel-info" id="selInfo">Tap furniture to select</span>
+    <button id="rotBtn" disabled>↻ 90°</button>
+    <button id="delBtn" class="danger" disabled>🗑</button>
+    <button id="varBtn" class="secondary">📁</button>
+    <button id="shareBtn" class="ok">↗</button>
+  </footer>
+</div>
+
+<!-- Variants modal -->
+<div class="modal-bg" id="varModal">
+  <div class="modal">
+    <h2 id="varModalTitle">Variants</h2>
+    <div id="varList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"></div>
+    <div class="custom-row">
+      <input type="text" id="newVarName" placeholder="Name" style="flex:1;">
+      <button id="newVarBtn" class="ok">+ New</button>
+    </div>
+    <div class="custom-row">
+      <input type="text" id="importUrl" placeholder="Paste shared link…" style="flex:1;">
+      <button id="importBtn" class="ok">Import</button>
+    </div>
+    <button class="modal-close" id="varModalClose">Close</button>
+  </div>
+</div>
+
+<!-- Furniture modal -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h2 id="addModalTitle">Add furniture</h2>
+    <div class="palette" id="palette"></div>
+    <div class="custom-row">
+      <label id="customLabel">Custom:</label>
+      <input type="text" id="cName" value="Furniture">
+      <input type="number" id="cW" value="60" min="10">×
+      <input type="number" id="cH" value="40" min="10"><span id="unitLabel">cm</span>
+      <button id="cAdd" class="ok">+ Add</button>
+    </div>
+    <button class="modal-close" id="modalClose">Close</button>
+  </div>
+</div>
+
+<script>
+// =============================================================
+// Quick & Dirty Floor Planner
+// MIT License - Michael Schulte
+// Vibe-coded with Claude (Anthropic), 2026
+// =============================================================
+
+// ====== i18n ======
+const LANG = {
+  en: {
+    title: 'Quick & Dirty Floor Planner',
+    openStorage: 'Open storage',
+    addFurniture: 'Furniture',
+    selectHint: 'Tap furniture to select',
+    addModalTitle: 'Add furniture',
+    customLabel: 'Custom:',
+    customDefault: 'Furniture',
+    addBtn: '+ Add',
+    close: 'Close',
+    variantsTitle: 'Variants',
+    newVarPlaceholder: 'Name',
+    newVarBtn: '+ New',
+    importPlaceholder: 'Paste shared link…',
+    importBtn: 'Import',
+    load: 'Load',
+    overwrite: '"%s" already exists. Overwrite?',
+    minOneVar: 'At least one variant must remain.',
+    delConfirm: 'Really delete "%s"?',
+    nameTaken: 'Name already taken.',
+    newName: 'New name:',
+    importAs: 'Import as:',
+    importPrompt: 'Import shared plan as:',
+    cantRead: 'Could not read the link.',
+    linkCopied: 'Link copied',
+    linkToCopy: 'Link to copy:',
+    shareTitle: 'Quick & Dirty Floor Planner',
+    shareText: 'Floor plan variant "%s":\n%s',
+    addedHint: '%s added',
+    selectedFmt: '%s (%d×%d cm)',
+    rooms: { wc:'WC', storage:'Storage', bath:'Bath', kitchen:'Kitchen',
+             dining:'Dining', hall:'Hallway', bedroom:'Bedroom', living:'Living' },
+  },
+  de: {
+    title: 'Quick & Dirty Einrichtungsplaner',
+    openStorage: 'Abstellraum öffnen',
+    addFurniture: 'Möbel',
+    selectHint: 'Tippe ein Möbel zum Auswählen',
+    addModalTitle: 'Möbel hinzufügen',
+    customLabel: 'Eigenes:',
+    customDefault: 'Möbel',
+    addBtn: '+ Hinzufügen',
+    close: 'Schließen',
+    variantsTitle: 'Varianten',
+    newVarPlaceholder: 'Name',
+    newVarBtn: '+ Neu',
+    importPlaceholder: 'Geteilten Link einfügen…',
+    importBtn: 'Importieren',
+    load: 'Laden',
+    overwrite: '„%s" existiert schon. Überschreiben?',
+    minOneVar: 'Mindestens eine Variante muss bleiben.',
+    delConfirm: '„%s" wirklich löschen?',
+    nameTaken: 'Name schon vergeben.',
+    newName: 'Neuer Name:',
+    importAs: 'Importieren als:',
+    importPrompt: 'Geteilten Plan importieren als:',
+    cantRead: 'Konnte den Link nicht lesen.',
+    linkCopied: 'Link kopiert',
+    linkToCopy: 'Link zum Kopieren:',
+    shareTitle: 'Quick & Dirty Einrichtungsplaner',
+    shareText: 'Wohnungs-Variante „%s":\n%s',
+    addedHint: '%s hinzugefügt',
+    selectedFmt: '%s (%d×%d cm)',
+    rooms: { wc:'WC', storage:'Abstellraum', bath:'Bad', kitchen:'Kochen',
+             dining:'Essen', hall:'Vorzimmer', bedroom:'Schlafzimmer', living:'Wohnen' },
+  },
+};
+const lang = (new URLSearchParams(location.search).get('lang')
+              || (navigator.language || 'en').slice(0,2)).toLowerCase();
+const L = LANG[lang] || LANG.en;
+function fmt(s, ...args) { let i=0; return s.replace(/%[sd]/g, () => args[i++]); }
+
+// ====== Furniture catalog (sizes in cm) ======
+const CATALOG = [
+  { en: 'Bed 90×200',     de: 'Bett 90×200',    w: 90,  h: 200 },
+  { en: 'Bed 140×200',    de: 'Bett 140×200',   w: 140, h: 200 },
+  { en: 'Bed 160×200',    de: 'Bett 160×200',   w: 160, h: 200 },
+  { en: 'Bed 180×200',    de: 'Bett 180×200',   w: 180, h: 200 },
+  { en: 'Nightstand',     de: 'Nachttisch',     w: 40,  h: 40  },
+  { en: 'Wardrobe 100',   de: 'Schrank 100',    w: 100, h: 60  },
+  { en: 'Wardrobe 150',   de: 'Schrank 150',    w: 150, h: 60  },
+  { en: 'Wardrobe 200',   de: 'Schrank 200',    w: 200, h: 60  },
+  { en: 'Corner wardrobe',de: 'Eckschrank',     w: 80,  h: 80  },
+  { en: 'Dresser 80',     de: 'Kommode 80',     w: 80,  h: 40  },
+  { en: 'Dresser 120',    de: 'Kommode 120',    w: 120, h: 40  },
+  { en: 'Shelf 80',       de: 'Regal 80',       w: 80,  h: 30  },
+  { en: 'Shelf 120',      de: 'Regal 120',      w: 120, h: 30  },
+  { en: 'Desk',           de: 'Schreibtisch',   w: 140, h: 70  },
+  { en: 'Sofa 2-seat',    de: 'Sofa 2-Sitzer',  w: 180, h: 90  },
+  { en: 'Sofa 3-seat',    de: 'Sofa 3-Sitzer',  w: 220, h: 95  },
+  { en: 'Armchair',       de: 'Sessel',         w: 85,  h: 85  },
+  { en: 'Dining table 4', de: 'Esstisch 4P',    w: 140, h: 80  },
+  { en: 'Dining table 6', de: 'Esstisch 6P',    w: 180, h: 90  },
+  { en: 'Chair',          de: 'Stuhl',          w: 45,  h: 45  },
+  { en: 'Washing machine',de: 'Waschmaschine',  w: 60,  h: 60  },
+  { en: 'Fridge',         de: 'Kühlschrank',    w: 60,  h: 65  },
+  { en: 'Stove',          de: 'Herd',           w: 60,  h: 60  },
+  { en: 'Sink',           de: 'Spüle',          w: 80,  h: 60  },
+  { en: 'Toilet',         de: 'WC',             w: 40,  h: 65  },
+  { en: 'Basin',          de: 'Waschbecken',    w: 60,  h: 45  },
+  { en: 'Bathtub',        de: 'Badewanne',      w: 170, h: 75  },
+  { en: 'Shower',         de: 'Dusche',         w: 90,  h: 90  },
+];
+const itemName = it => it[lang] || it.en;
+
+// ====== State (multi-variant) ======
+const STORE_KEY = "qdfp_v1";
+let store = loadStore();
+let state = store.variants[store.current];
+let nextId = computeNextId();
+let selectedId = null;
+
+function computeNextId() {
+  return state.furniture.reduce((m,f)=>Math.max(m,f.id),0) + 1;
+}
+function loadStore() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && s.variants && s.current && s.variants[s.current]) return s;
+  } catch(e) {}
+  const defaultName = lang === 'de' ? 'Variante 1' : 'Variant 1';
+  return {
+    variants: { [defaultName]: { furniture: [], wallsRemoved: false, mtime: Date.now() } },
+    current: defaultName
+  };
+}
+function saveStore() {
+  state.mtime = Date.now();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch(e) {}
+}
+
+// ====== Element refs ======
+const $ = id => document.getElementById(id);
+const svg = $('plan');
+const furnitureG = $('furniture');
+const removableG = $('removable-walls');
+const wallToggle = $('wallToggle');
+const selInfo = $('selInfo');
+const rotBtn = $('rotBtn');
+const delBtn = $('delBtn');
+const addBtn = $('addBtn');
+const modal = $('modal');
+const palette = $('palette');
+const modalClose = $('modalClose');
+const cAdd = $('cAdd');
+const hint = $('hint');
+const varName = $('varName');
+const varBtn = $('varBtn');
+const varModal = $('varModal');
+const varList = $('varList');
+const newVarName = $('newVarName');
+const newVarBtn = $('newVarBtn');
+const importUrl = $('importUrl');
+const importBtn = $('importBtn');
+const varModalClose = $('varModalClose');
+const shareBtn = $('shareBtn');
+
+// ====== Apply translations to static UI ======
+function applyI18n() {
+  document.title = L.title;
+  document.documentElement.lang = lang;
+  $('toggleLabel').textContent = L.openStorage;
+  $('lbl-add').textContent = L.addFurniture;
+  $('addModalTitle').textContent = L.addModalTitle;
+  $('customLabel').textContent = L.customLabel;
+  $('cName').value = L.customDefault;
+  $('cAdd').textContent = L.addBtn;
+  $('modalClose').textContent = L.close;
+  $('varModalTitle').textContent = L.variantsTitle;
+  $('newVarName').placeholder = L.newVarPlaceholder;
+  $('newVarBtn').textContent = L.newVarBtn;
+  $('importUrl').placeholder = L.importPlaceholder;
+  $('importBtn').textContent = L.importBtn;
+  $('varModalClose').textContent = L.close;
+  // Room labels
+  $('lbl-wc').textContent       = L.rooms.wc;
+  $('lbl-storage').textContent  = L.rooms.storage;
+  $('lbl-bath').textContent     = L.rooms.bath;
+  $('lbl-kitchen').textContent  = L.rooms.kitchen;
+  $('lbl-dining').textContent   = L.rooms.dining;
+  $('lbl-hall').textContent     = L.rooms.hall;
+  $('lbl-bedroom1').textContent = L.rooms.bedroom;
+  $('lbl-bedroom2').textContent = L.rooms.bedroom;
+  $('lbl-living').textContent   = L.rooms.living;
+}
+
+// ====== Init ======
+applyI18n();
+buildPalette();
+checkUrlImport();
+loadVariant(store.current);
+
+// ====== Palette ======
+function buildPalette() {
+  palette.innerHTML = '';
+  CATALOG.forEach(item => {
+    const b = document.createElement('button');
+    const name = itemName(item);
+    b.innerHTML = `<strong>${name}</strong><small>${item.w}×${item.h} cm</small>`;
+    b.onclick = () => { addFurniture(name, item.w, item.h); closeModal(); };
+    palette.appendChild(b);
+  });
+}
+
+addBtn.onclick = () => modal.classList.add('show');
+modalClose.onclick = closeModal;
+modal.onclick = e => { if (e.target === modal) closeModal(); };
+function closeModal() { modal.classList.remove('show'); }
+
+cAdd.onclick = () => {
+  const n = $('cName').value || L.customDefault;
+  const w = parseInt($('cW').value);
+  const h = parseInt($('cH').value);
+  if (w > 0 && h > 0) { addFurniture(n, w, h); closeModal(); }
+};
+
+// ====== Wall toggle ======
+wallToggle.onchange = () => {
+  state.wallsRemoved = wallToggle.checked;
+  applyWallToggle();
+  saveStore();
+};
+function applyWallToggle() {
+  removableG.classList.toggle('hidden', state.wallsRemoved);
+}
+
+// ====== Add furniture ======
+function addFurniture(name, w, h) {
+  const cx = view.x + view.w/2, cy = view.y + view.h/2;
+  const f = { id: nextId++, name, w, h, x: cx - w/2, y: cy - h/2, rot: 0 };
+  state.furniture.push(f);
+  selectedId = f.id;
+  saveStore(); render(); updateSel();
+  showHint(fmt(L.addedHint, name));
+}
+
+// ====== Rendering ======
+function render() {
+  furnitureG.innerHTML = '';
+  state.furniture.forEach(f => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class', 'furn' + (f.id === selectedId ? ' selected' : ''));
+    g.dataset.id = f.id;
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x', f.x); r.setAttribute('y', f.y);
+    r.setAttribute('width', f.w); r.setAttribute('height', f.h);
+    g.appendChild(r);
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', f.x + f.w/2); t.setAttribute('y', f.y + f.h/2);
+    t.textContent = f.name;
+    g.appendChild(t);
+    furnitureG.appendChild(g);
+  });
+}
+
+function updateSel() {
+  const f = state.furniture.find(x => x.id === selectedId);
+  if (f) {
+    selInfo.textContent = fmt(L.selectedFmt, f.name, f.w, f.h);
+    rotBtn.disabled = false; delBtn.disabled = false;
+  } else {
+    selInfo.textContent = L.selectHint;
+    rotBtn.disabled = true; delBtn.disabled = true;
+  }
+}
+
+rotBtn.onclick = () => {
+  const f = state.furniture.find(x => x.id === selectedId);
+  if (!f) return;
+  const cx = f.x + f.w/2, cy = f.y + f.h/2;
+  [f.w, f.h] = [f.h, f.w];
+  f.x = cx - f.w/2; f.y = cy - f.h/2;
+  saveStore(); render(); updateSel();
+};
+
+delBtn.onclick = () => {
+  state.furniture = state.furniture.filter(f => f.id !== selectedId);
+  selectedId = null; saveStore(); render(); updateSel();
+};
+
+// ====== Pan / Zoom ======
+let view = { x: 600, y: 280, w: 1600, h: 760 };
+function applyView() { svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`); }
+applyView();
+
+const pointers = new Map();
+let dragMode = null;
+let dragFurn = null;
+let dragStart = null;
+
+svg.addEventListener('pointerdown', e => {
+  svg.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  let target = e.target;
+  while (target && target !== svg) {
+    if (target.classList && target.classList.contains('furn')) break;
+    target = target.parentNode;
+  }
+  if (target && target.classList && target.classList.contains('furn')) {
+    selectedId = parseInt(target.dataset.id);
+    dragFurn = state.furniture.find(f => f.id === selectedId);
+    dragMode = 'furn';
+    const pt = clientToSvg(e.clientX, e.clientY);
+    dragStart = { px: pt.x, py: pt.y, fx: dragFurn.x, fy: dragFurn.y };
+    render(); updateSel();
+    e.preventDefault();
+    return;
+  }
+
+  if (pointers.size === 1) {
+    if (selectedId !== null) { selectedId = null; render(); updateSel(); }
+    dragMode = 'pan';
+    dragStart = { vx: view.x, vy: view.y, cx: e.clientX, cy: e.clientY };
+  } else if (pointers.size === 2) {
+    dragMode = 'pinch';
+    const ps = [...pointers.values()];
+    dragStart = {
+      vx: view.x, vy: view.y, vw: view.w, vh: view.h,
+      d: dist(ps[0], ps[1]),
+      mx: (ps[0].x + ps[1].x) / 2,
+      my: (ps[0].y + ps[1].y) / 2,
+    };
+  }
+});
+
+svg.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (dragMode === 'furn' && dragFurn) {
+    const pt = clientToSvg(e.clientX, e.clientY);
+    let nx = dragStart.fx + (pt.x - dragStart.px);
+    let ny = dragStart.fy + (pt.y - dragStart.py);
+    const snapped = snap(nx, ny, dragFurn);
+    dragFurn.x = snapped.x;
+    dragFurn.y = snapped.y;
+    render();
+    updateSelLive(snapped.snapped);
+  } else if (dragMode === 'pan' && pointers.size === 1) {
+    const dx = (e.clientX - dragStart.cx) * view.w / svg.clientWidth;
+    const dy = (e.clientY - dragStart.cy) * view.h / svg.clientHeight;
+    view.x = dragStart.vx - dx;
+    view.y = dragStart.vy - dy;
+    applyView();
+  } else if (dragMode === 'pinch' && pointers.size === 2) {
+    const ps = [...pointers.values()];
+    const d = dist(ps[0], ps[1]);
+    const scale = dragStart.d / d;
+    let nw = dragStart.vw * scale;
+    let nh = dragStart.vh * scale;
+    nw = Math.max(200, Math.min(3500, nw));
+    nh = Math.max(150, Math.min(1500, nh));
+    const rect = svg.getBoundingClientRect();
+    const fx = (dragStart.mx - rect.left) / rect.width;
+    const fy = (dragStart.my - rect.top) / rect.height;
+    const cx = dragStart.vx + dragStart.vw * fx;
+    const cy = dragStart.vy + dragStart.vh * fy;
+    view.x = cx - nw * fx;
+    view.y = cy - nh * fy;
+    view.w = nw; view.h = nh;
+    applyView();
+  }
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size === 0) {
+    if (dragMode === 'furn') saveStore();
+    dragMode = null; dragFurn = null;
+  } else if (dragMode === 'pinch' && pointers.size === 1) {
+    const p = [...pointers.values()][0];
+    dragMode = 'pan';
+    dragStart = { vx: view.x, vy: view.y, cx: p.x, cy: p.y };
+  }
+}
+svg.addEventListener('pointerup', endPointer);
+svg.addEventListener('pointercancel', endPointer);
+
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const scale = e.deltaY > 0 ? 1.1 : 1/1.1;
+  const rect = svg.getBoundingClientRect();
+  const fx = (e.clientX - rect.left) / rect.width;
+  const fy = (e.clientY - rect.top) / rect.height;
+  const cx = view.x + view.w * fx;
+  const cy = view.y + view.h * fy;
+  view.w *= scale; view.h *= scale;
+  view.x = cx - view.w * fx;
+  view.y = cy - view.h * fy;
+  applyView();
+}, { passive: false });
+
+function clientToSvg(cx, cy) {
+  const rect = svg.getBoundingClientRect();
+  return {
+    x: view.x + (cx - rect.left) * view.w / rect.width,
+    y: view.y + (cy - rect.top) * view.h / rect.height,
+  };
+}
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// ====== Snap ======
+function getSnapEdges() {
+  const verts = [];
+  const horzs = [];
+  document.querySelectorAll('#walls rect').forEach(r => {
+    if (r.closest('.removable.hidden')) return;
+    const x = +r.getAttribute('x'), y = +r.getAttribute('y');
+    const w = +r.getAttribute('width'), h = +r.getAttribute('height');
+    verts.push(x, x+w);
+    horzs.push(y, y+h);
+  });
+  state.furniture.forEach(f => {
+    if (f.id === selectedId) return;
+    verts.push(f.x, f.x + f.w);
+    horzs.push(f.y, f.y + f.h);
+  });
+  return { verts, horzs };
+}
+
+function snap(nx, ny, f) {
+  const TOL = 3;
+  const { verts, horzs } = getSnapEdges();
+  let bestX = nx, bestDX = TOL, snappedX = false;
+  let bestY = ny, bestDY = TOL, snappedY = false;
+  for (const v of verts) {
+    if (Math.abs(nx - v) < bestDX)        { bestDX = Math.abs(nx - v);        bestX = v;        snappedX = true; }
+    if (Math.abs((nx+f.w) - v) < bestDX)  { bestDX = Math.abs((nx+f.w) - v);  bestX = v - f.w;  snappedX = true; }
+  }
+  for (const h of horzs) {
+    if (Math.abs(ny - h) < bestDY)        { bestDY = Math.abs(ny - h);        bestY = h;        snappedY = true; }
+    if (Math.abs((ny+f.h) - h) < bestDY)  { bestDY = Math.abs((ny+f.h) - h);  bestY = h - f.h;  snappedY = true; }
+  }
+  return { x: bestX, y: bestY, snapped: snappedX || snappedY };
+}
+
+function updateSelLive(isSnapped) {
+  const f = state.furniture.find(x => x.id === selectedId);
+  if (!f) return;
+  const tag = isSnapped ? ' 🔗' : '';
+  selInfo.textContent = fmt(L.selectedFmt, f.name, f.w, f.h) + tag;
+}
+
+function showHint(t) {
+  hint.textContent = t;
+  hint.classList.add('show');
+  clearTimeout(showHint._t);
+  showHint._t = setTimeout(() => hint.classList.remove('show'), 1500);
+}
+
+// ====== Variants ======
+function loadVariant(name) {
+  if (!store.variants[name]) return;
+  store.current = name;
+  state = store.variants[name];
+  if (!state.furniture) state.furniture = [];
+  selectedId = null;
+  nextId = computeNextId();
+  varName.textContent = name;
+  wallToggle.checked = !!state.wallsRemoved;
+  applyWallToggle();
+  render();
+  updateSel();
+  saveStore();
+}
+
+function createVariant(name, data) {
+  if (!name) return;
+  if (store.variants[name]) {
+    if (!confirm(fmt(L.overwrite, name))) return;
+  }
+  store.variants[name] = data || { furniture: [], wallsRemoved: false, mtime: Date.now() };
+  saveStore();
+  loadVariant(name);
+  renderVarList();
+}
+
+function deleteVariant(name) {
+  if (Object.keys(store.variants).length <= 1) {
+    alert(L.minOneVar); return;
+  }
+  if (!confirm(fmt(L.delConfirm, name))) return;
+  delete store.variants[name];
+  if (store.current === name) loadVariant(Object.keys(store.variants)[0]);
+  saveStore();
+  renderVarList();
+}
+
+function duplicateVariant(name) {
+  const baseSuffix = lang === 'de' ? ' (Kopie)' : ' (copy)';
+  const re = lang === 'de' ? / \(Kopie( \d+)?\)$/ : / \(copy( \d+)?\)$/;
+  const base = name.replace(re, '');
+  let i = 1, n;
+  do { n = i === 1 ? `${base}${baseSuffix}` : `${base}${baseSuffix.slice(0,-1)} ${i})`; i++; }
+  while (store.variants[n]);
+  store.variants[n] = JSON.parse(JSON.stringify(store.variants[name]));
+  store.variants[n].mtime = Date.now();
+  saveStore();
+  loadVariant(n);
+  renderVarList();
+}
+
+function renameVariant(oldName) {
+  const n = prompt(L.newName, oldName);
+  if (!n || n === oldName) return;
+  if (store.variants[n]) { alert(L.nameTaken); return; }
+  store.variants[n] = store.variants[oldName];
+  delete store.variants[oldName];
+  if (store.current === oldName) store.current = n;
+  saveStore();
+  varName.textContent = store.current;
+  renderVarList();
+}
+
+function renderVarList() {
+  varList.innerHTML = '';
+  Object.keys(store.variants).sort().forEach(name => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:4px; align-items:center; padding:6px; background:#ecf0f1; border-radius:6px;';
+    const isCur = name === store.current;
+    const lbl = document.createElement('strong');
+    lbl.style.cssText = `flex:1; font-size:13px; ${isCur?'color:#27ae60':''}`;
+    lbl.textContent = (isCur?'● ':'') + name;
+    row.appendChild(lbl);
+    const mk = (label, fn, cls='') => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = 'padding:6px 8px; font-size:12px;';
+      if (cls) b.className = cls;
+      b.onclick = fn;
+      return b;
+    };
+    if (!isCur) row.appendChild(mk(L.load, () => { loadVariant(name); renderVarList(); }));
+    row.appendChild(mk('📋', () => duplicateVariant(name)));
+    row.appendChild(mk('✎', () => renameVariant(name)));
+    row.appendChild(mk('🗑', () => deleteVariant(name), 'danger'));
+    varList.appendChild(row);
+  });
+}
+
+varBtn.onclick = () => { renderVarList(); varModal.classList.add('show'); };
+varModalClose.onclick = () => varModal.classList.remove('show');
+varModal.onclick = e => { if (e.target === varModal) varModal.classList.remove('show'); };
+
+newVarBtn.onclick = () => {
+  const n = newVarName.value.trim();
+  if (!n) return;
+  createVariant(n);
+  newVarName.value = '';
+};
+
+// ====== Share / Import ======
+function encodeState(s) {
+  const payload = {
+    n: store.current,
+    w: !!s.wallsRemoved,
+    f: s.furniture.map(f => [f.name, f.x|0, f.y|0, f.w|0, f.h|0]),
+  };
+  const json = JSON.stringify(payload);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function decodeState(str) {
+  try {
+    const b64 = str.replace(/-/g,'+').replace(/_/g,'/');
+    const json = decodeURIComponent(escape(atob(b64)));
+    const p = JSON.parse(json);
+    const fallback = lang === 'de' ? 'Geteilt' : 'Shared';
+    return {
+      name: p.n || fallback,
+      data: {
+        wallsRemoved: !!p.w,
+        furniture: (p.f || []).map((a, i) => ({
+          id: i+1, name: a[0], x: a[1], y: a[2], w: a[3], h: a[4], rot: 0
+        })),
+        mtime: Date.now(),
+      }
+    };
+  } catch(e) { return null; }
+}
+function buildShareUrl() {
+  const base = location.href.split('#')[0].split('?')[0];
+  const qs = lang !== ((navigator.language||'en').slice(0,2)).toLowerCase() ? `?lang=${lang}` : '';
+  return base + qs + '#v=' + encodeState(state);
+}
+
+shareBtn.onclick = async () => {
+  const url = buildShareUrl();
+  const text = fmt(L.shareText, store.current, url);
+  if (navigator.share) {
+    try { await navigator.share({ title: L.shareTitle, text, url }); return; } catch(e) {}
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showHint(L.linkCopied);
+  } catch(e) {
+    prompt(L.linkToCopy, url);
+  }
+};
+
+importBtn.onclick = () => {
+  const txt = importUrl.value.trim();
+  if (!txt) return;
+  const m = txt.match(/#v=([A-Za-z0-9_\-]+)/);
+  const code = m ? m[1] : txt;
+  const dec = decodeState(code);
+  if (!dec) { alert(L.cantRead); return; }
+  const n = prompt(L.importAs, dec.name);
+  if (!n) return;
+  createVariant(n, dec.data);
+  importUrl.value = '';
+  varModal.classList.remove('show');
+};
+
+function checkUrlImport() {
+  const m = location.hash.match(/^#v=([A-Za-z0-9_\-]+)/);
+  if (!m) return;
+  const dec = decodeState(m[1]);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!dec) return;
+  const n = prompt(L.importPrompt, dec.name);
+  if (!n) return;
+  createVariant(n, dec.data);
+}
+</script>
+</body>
+</html>
