@@ -482,6 +482,8 @@ function applyWallToggle() {
 // ====== Add furniture ======
 function addFurniture(name, w, h) {
   const cx = view.x + view.w/2, cy = view.y + view.h/2;
+  // Always recompute to avoid id collisions after imports/scripted edits
+  nextId = Math.max(nextId, computeNextId());
   const f = { id: nextId++, name, w, h, x: cx - w/2, y: cy - h/2, rot: 0 };
   state.furniture.push(f);
   selectedId = f.id;
