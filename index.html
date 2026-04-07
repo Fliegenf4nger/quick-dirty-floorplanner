@@ -20,11 +20,6 @@
     flex-shrink: 0;
   }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
-  .toggle {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 12px; cursor: pointer;
-  }
-  .toggle input { width: 16px; height: 16px; }
   #canvas-wrap {
     flex: 1; position: relative; overflow: hidden; background: #fff;
     touch-action: none;
@@ -91,10 +86,6 @@
     dominant-baseline: middle; pointer-events: none;
     font-family: sans-serif;
   }
-  .removable { opacity: 1; transition: opacity 0.2s; }
-  .removable.hidden { opacity: 0.15; }
-  .removable.hidden rect, .removable.hidden polygon { fill: #ddd; }
-
   .hint {
     position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
     background: rgba(44,62,80,0.9); color: white;
@@ -108,10 +99,6 @@
 <div id="app">
   <header>
     <h1>🏠 <span id="varName">Variant</span></h1>
-    <label class="toggle">
-      <input type="checkbox" id="wallToggle">
-      <span id="toggleLabel">Open storage</span>
-    </label>
   </header>
 
   <div id="canvas-wrap">
@@ -149,12 +136,10 @@
         <rect x="1189" y="865" width="33"  height="100"/>
         <rect x="1779" y="915" width="45"  height="40"/>
 
-        <g id="removable-walls" class="removable">
-          <rect x="890" y="450" width="125" height="9"/>
-          <polygon points="1088,526 1088,533 1078,523 1082,518"/>
-          <rect x="1078" y="524" width="137" height="9"/>
-          <rect x="1078" y="471" width="9"   height="62"/>
-        </g>
+        <rect x="890" y="450" width="125" height="9"/>
+        <polygon points="1088,526 1088,533 1078,523 1082,518"/>
+        <rect x="1078" y="524" width="137" height="9"/>
+        <rect x="1078" y="471" width="9"   height="62"/>
       </g>
 
       <g id="openings" fill="#ffffff" stroke="#bdbdbd" stroke-width="1.5">
@@ -255,7 +240,6 @@
 const LANG = {
   en: {
     title: 'Quick & Dirty Floor Planner',
-    openStorage: 'Open storage',
     addFurniture: 'Furniture',
     selectHint: 'Tap furniture to select',
     addModalTitle: 'Add furniture',
@@ -288,7 +272,6 @@ const LANG = {
   },
   de: {
     title: 'Quick & Dirty Einrichtungsplaner',
-    openStorage: 'Abstellraum öffnen',
     addFurniture: 'Möbel',
     selectHint: 'Tippe ein Möbel zum Auswählen',
     addModalTitle: 'Möbel hinzufügen',
@@ -388,8 +371,6 @@ function saveStore() {
 const $ = id => document.getElementById(id);
 const svg = $('plan');
 const furnitureG = $('furniture');
-const removableG = $('removable-walls');
-const wallToggle = $('wallToggle');
 const selInfo = $('selInfo');
 const rotBtn = $('rotBtn');
 const delBtn = $('delBtn');
@@ -414,7 +395,6 @@ const shareBtn = $('shareBtn');
 function applyI18n() {
   document.title = L.title;
   document.documentElement.lang = lang;
-  $('toggleLabel').textContent = L.openStorage;
   $('lbl-add').textContent = L.addFurniture;
   $('addModalTitle').textContent = L.addModalTitle;
   $('customLabel').textContent = L.customLabel;
@@ -468,16 +448,6 @@ cAdd.onclick = () => {
   const h = parseInt($('cH').value);
   if (w > 0 && h > 0) { addFurniture(n, w, h); closeModal(); }
 };
-
-// ====== Wall toggle ======
-wallToggle.onchange = () => {
-  state.wallsRemoved = wallToggle.checked;
-  applyWallToggle();
-  saveStore();
-};
-function applyWallToggle() {
-  removableG.classList.toggle('hidden', state.wallsRemoved);
-}
 
 // ====== Add furniture ======
 function addFurniture(name, w, h) {
@@ -662,7 +632,6 @@ function getSnapEdges() {
   const verts = [];
   const horzs = [];
   document.querySelectorAll('#walls rect').forEach(r => {
-    if (r.closest('.removable.hidden')) return;
     const x = +r.getAttribute('x'), y = +r.getAttribute('y');
     const w = +r.getAttribute('width'), h = +r.getAttribute('height');
     verts.push(x, x+w);
@@ -715,8 +684,6 @@ function loadVariant(name) {
   selectedId = null;
   nextId = computeNextId();
   varName.textContent = name;
-  wallToggle.checked = !!state.wallsRemoved;
-  applyWallToggle();
   render();
   updateSel();
   saveStore();

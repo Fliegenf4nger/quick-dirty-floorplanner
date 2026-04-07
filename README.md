@@ -44,6 +44,7 @@ roadmap (the algorithm already works in Python, just needs porting to JS).
 
 - [ ] Floor plan import: upload a photo/PDF of an existing plan, auto-trace walls
 - [ ] Wall editing: draw and move walls directly in the app
+- [ ] Mark walls as "removable" for before/after preview (renovation planning)
 - [ ] Export as bitmap / PDF for printing
 - [ ] Furniture rotation in arbitrary angles (currently 90° only)
 - [ ] Undo / redo
